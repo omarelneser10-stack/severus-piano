@@ -1,92 +1,8 @@
 import { useRef, useState } from 'react';
 
-const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
-
-const SYSTEM_PROMPT = `You are an expert music engraver and pianist with decades of experience reading classical piano sheet music. You will analyze a piano sheet music image with extreme precision.
-
-You MUST follow these steps in order. Do not skip any step.
-
----
-
-STEP 1 — DESCRIBE WHAT YOU SEE
-
-Before extracting any notes, output a JSON object called "sheetInfo" describing the sheet:
-
-{
-  "sheetInfo": {
-    "clefs": "e.g. Grand staff: treble (right hand) + bass (left hand)",
-    "keySignature": "e.g. G major (1 sharp: F#) or C minor (3 flats: Bb, Eb, Ab)",
-    "timeSignature": "e.g. 3/4",
-    "detectedStyle": "one of exactly: Waltz, Minuet, Barcarolle, Nocturne, March, Freeform",
-    "styleConfidence": 0.95,
-    "tempoMarking": "e.g. Andante, Allegro, or BPM if written",
-    "quarterNoteDuration": 0.5,
-    "measuresDetected": 8,
-    "accidentalsInKeySignature": ["F#"]
-  }
-}
-
----
-
-STEP 2 — CRITICAL RULES FOR READING NOTES CORRECTLY
-
-CLEF POSITIONS:
-Treble clef (right hand):
-  Lines bottom to top: E4, G4, B4, D5, F5
-  Spaces bottom to top: F4, A4, C5, E5
-  Ledger line below staff: C4 (middle C)
-
-Bass clef (left hand):
-  Lines bottom to top: G2, B2, D3, F3, A3
-  Spaces bottom to top: A2, C3, E3, G3
-  Ledger line above staff: C4 (middle C)
-
-CRITICAL OCTAVE RULE: Middle C is C4. Bass clef notes are LOWER — bottom line of bass clef is G2, not G4.
-
-ACCIDENTALS RULE: Apply key signature accidentals to every note of that pitch class throughout the piece, unless overridden by a natural sign or local accidental.
-
-CHORD READING RULE: Multiple noteheads stacked vertically belong in the same beat object. Read ALL noteheads.
-
----
-
-STEP 3 — STYLE DETECTION
-
-Detect musical style. Use EXACTLY one of: Waltz, Minuet, Barcarolle, Nocturne, March, Freeform
-
-WALTZ (3/4): Beat 1 = lowest bass note alone. Beats 2-3 = upper chord notes together.
-MINUET (3/4): Like waltz but stately. Held bass notes echo on beat 2.
-BARCAROLLE (6/8): 6 eighth-note beats per measure, oom-pah-pah x2 pattern.
-NOCTURNE (4/4 or 12/8): Alberti bass or arpeggiated chords in left hand. Output as written.
-MARCH (2/4 or 4/4): Strong downbeat, dotted rhythms preserved exactly.
-FREEFORM: Output every note exactly as written, no restructuring.
-
----
-
-STEP 4 — OUTPUT FORMAT
-
-Return a "beats" array. Each beat object:
-- "beat": integer starting at 1
-- "measure": integer starting at 1
-- "rightHand": array of note objects (treble clef)
-- "leftHand": array of note objects (bass clef)
-- "duration": float in seconds
-- "isRest": boolean, true only if BOTH hands empty
-
-Each note object:
-- "note": string with octave, e.g. "C4", "F#3", "Bb2". ALWAYS include octave number.
-- "finger": integer 1-5
-- "confidence": float 0.0-1.0
-
----
-
-STEP 5 — FINAL OUTPUT
-
-Return ONLY valid JSON, parseable by JSON.parse(). No markdown, no explanation.
-
-{
-  "sheetInfo": { ...Step 1 fields... },
-  "beats": [ ...beat objects... ]
-}`;
+// The Anthropic API key is NEVER read in the browser — all model calls go
+// through the /api/parse-sheet serverless function, which holds the key.
+// The system prompt also lives server-side (see api/parse-sheet.js).
 
 // ── Hashing ────────────────────────────────────────────────────────────────
 // Generate a SHA-256 fingerprint of the base64 string to use as a cache key
@@ -239,48 +155,31 @@ export default function Uploader({ onParsed }) {
   };
 
   const handleParse = async () => {
-    if (!fileData || !API_KEY) return;
+    if (!fileData) return;
     setParsing(true);
     setSheetInfo(null);
     setShowNamePrompt(false);
     setStatus({ type: 'loading', message: 'Analyzing sheet music with AI…' });
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      // Call our own server-side proxy — the Anthropic key lives on Vercel,
+      // never in the browser bundle.
+      const response = await fetch('/api/parse-sheet', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': API_KEY,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5',
-          max_tokens: 16000,
-          system: SYSTEM_PROMPT,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: 'image/png', data: fileData.base64 },
-              },
-              {
-                type: 'text',
-                text: 'Analyze this piano sheet music. Follow all 5 steps precisely. Return only valid JSON.',
-              },
-            ],
-          }],
+          base64: fileData.base64,
+          mediaType: 'image/png',
         }),
       });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
-        throw new Error(err.error?.message || `API error ${response.status}`);
+        throw new Error(err.error || `API error ${response.status}`);
       }
 
       const data = await response.json();
-      const raw = data.content.map(c => c.text || '').join('');
+      const raw = data.raw || '';
       const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const parsed = JSON.parse(cleaned);
 
@@ -378,7 +277,7 @@ export default function Uploader({ onParsed }) {
               className="parse-btn"
               style={{ width: '100%', marginTop: '0.75rem' }}
               onClick={handleParse}
-              disabled={parsing || !API_KEY}
+              disabled={parsing}
             >
               {parsing ? 'Analyzing…' : 'Extract Notes via AI'}
             </button>

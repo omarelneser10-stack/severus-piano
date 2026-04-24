@@ -15,8 +15,6 @@ import {
   resumeContext,
 } from './audio/pianoEngine';
 
-const API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
-
 function formatTime(secs) {
   const s = Math.max(0, secs);
   const m = Math.floor(s / 60);
@@ -364,12 +362,9 @@ export default function App() {
         <div className="header-badge">Sheet Reader</div>
       </header>
 
-      {/* API Warning */}
-      {!API_KEY && (
-        <div className="api-warning">
-          ⚠ VITE_ANTHROPIC_API_KEY not set — sheet parsing will not work. Add it to your .env file.
-        </div>
-      )}
+      {/* The Anthropic API key lives server-side in the /api/parse-sheet
+          serverless function. If it's missing, the server will return a
+          clear 500 when the user clicks "Extract Notes via AI". */}
 
       <main className="main">
         {/* Top section: uploader */}
