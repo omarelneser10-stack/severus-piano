@@ -90,12 +90,11 @@ Return ONLY valid JSON, parseable by JSON.parse(). No markdown, no explanation.
   "beats": [ ...beat objects... ]
 }`;
 
+// Vercel Functions config — this is the correct top-level shape for a
+// non-Next.js /api/*.js function. `maxDuration` bumps the timeout from
+// the default 10s (Hobby) up to 60s (the Hobby max; Pro allows 300s).
+// The old `api: { bodyParser }` key was Next.js-only and was being ignored.
 export const config = {
-  // The image payloads can be several megabytes after base64 encoding.
-  api: {
-    bodyParser: { sizeLimit: '10mb' },
-  },
-  // Give Claude time to analyze a full page of sheet music.
   maxDuration: 60,
 };
 
