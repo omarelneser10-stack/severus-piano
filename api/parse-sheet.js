@@ -129,8 +129,11 @@ export default async function handler(req, res) {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 16000,
+        // Haiku 4.5 finishes within Vercel's Hobby 60s timeout on dense pages.
+        // If you upgrade to Vercel Pro (300s max), you can switch this back to
+        // 'claude-sonnet-4-5' for higher extraction accuracy.
+        model: 'claude-haiku-4-5',
+        max_tokens: 8000,
         system: SYSTEM_PROMPT,
         messages: [{
           role: 'user',
