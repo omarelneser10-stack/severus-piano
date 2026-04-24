@@ -133,7 +133,7 @@ export default async function handler(req, res) {
         // If you upgrade to Vercel Pro (300s max), you can switch this back to
         // 'claude-sonnet-4-5' for higher extraction accuracy.
         model: 'claude-haiku-4-5',
-        max_tokens: 8000,
+        max_tokens: 16000,
         system: SYSTEM_PROMPT,
         messages: [{
           role: 'user',
@@ -157,6 +157,16 @@ export default async function handler(req, res) {
       // Forward a sanitized error — never echo the API key or internal details.
       return res.status(upstream.status).json({
         error: payload?.error?.message || `Anthropic API error ${upstream.status}`,
+      });
+    }
+
+    // If the model hit the token cap, the JSON it emitted will be truncated
+    // and the client will blow up with an unhelpful "Unterminated string"
+    // error. Detect that here and return a clear message instead.
+    if (payload.stop_reason === 'max_tokens') {
+      return res.status(502).json({
+        error:
+          'The sheet is too long for a single pass — Claude ran out of output tokens before finishing. Try uploading a single page or a shorter excerpt.',
       });
     }
 
